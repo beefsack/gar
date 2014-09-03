@@ -10,34 +10,53 @@ import (
 )
 
 const (
+	FlagGzip = 1 << iota
+	FlagExtractFileSystem
+)
+
+const (
 	GarIdentifier      = "GAR"
-	GarOptFileSizeSize = 8
-	GarOptGzipSize     = 1
-	GarOptSize         = GarOptFileSizeSize + GarOptGzipSize
-	GarHeaderSize      = len(GarIdentifier) + GarOptSize
+	GarFileSizeOptSize = 8
+	GarFlagsSize       = 1
+	GarOptsSize        = GarFileSizeOptSize + GarFlagsSize
+	GarFooterSize      = len(GarIdentifier) + GarOptsSize
 )
 
 var globalLoader *Loader
 
+type ReadSeekCloser interface {
+	io.Reader
+	io.Seeker
+	io.Closer
+}
+
 type File struct {
 	FileInfo os.FileInfo
-	Content  io.ReadSeeker
+	Content  ReadSeekCloser
 }
 
 type GarInfo struct {
-	Gzip bool
-	Size int64
+	Flags byte
+	Size  int64
+}
+
+func (g GarInfo) IsFlag(flag byte) bool {
+	return g.Flags&flag != 0
+}
+
+func (g *GarInfo) SetFlag(flag byte, value bool) {
+	if value {
+		g.Flags |= flag
+	} else {
+		g.Flags &= ^flag
+	}
 }
 
 func (gi GarInfo) WriteTo(w io.Writer) error {
-	var gzipRaw byte
 	if err := binary.Write(w, binary.LittleEndian, gi.Size); err != nil {
 		return err
 	}
-	if gi.Gzip {
-		gzipRaw = 1
-	}
-	if err := binary.Write(w, binary.LittleEndian, gzipRaw); err != nil {
+	if err := binary.Write(w, binary.LittleEndian, gi.Flags); err != nil {
 		return err
 	}
 	if _, err := w.Write([]byte(GarIdentifier)); err != nil {
@@ -48,33 +67,31 @@ func (gi GarInfo) WriteTo(w io.Writer) error {
 
 func Stat(r io.ReadSeeker) (is bool, info GarInfo, err error) {
 	var (
-		header  []byte
-		gzipRaw byte
+		footer []byte
 	)
-	if _, err = r.Seek(int64(-GarHeaderSize), 2); err != nil {
-		err = fmt.Errorf("could not seek to start of gar header, %v", err)
+	if _, err = r.Seek(int64(-GarFooterSize), 2); err != nil {
+		err = fmt.Errorf("could not seek to start of gar footer, %v", err)
 		return
 	}
-	if header, err = ioutil.ReadAll(r); err != nil {
-		err = fmt.Errorf("could not read gar header, %v", err)
+	if footer, err = ioutil.ReadAll(r); err != nil {
+		err = fmt.Errorf("could not read gar footer, %v", err)
 		return
 	}
-	if len(header) != GarHeaderSize {
-		err = fmt.Errorf("header size did not match expected %d", GarHeaderSize)
+	if len(footer) != GarFooterSize {
+		err = fmt.Errorf("footer size did not match expected %d", GarFooterSize)
 		return
 	}
-	is = string(header[GarHeaderSize-len(GarIdentifier):]) == GarIdentifier
+	is = string(footer[GarFooterSize-len(GarIdentifier):]) == GarIdentifier
 	if !is {
 		return
 	}
-	br := bytes.NewReader(header)
+	br := bytes.NewReader(footer)
 	if err = binary.Read(br, binary.LittleEndian, &info.Size); err != nil {
-		err = fmt.Errorf("could not read size value from header, %v", err)
+		err = fmt.Errorf("could not read size value from footer, %v", err)
 	}
-	if err = binary.Read(br, binary.LittleEndian, &gzipRaw); err != nil {
-		err = fmt.Errorf("could not read gzip flag from header, %v", err)
+	if err = binary.Read(br, binary.LittleEndian, &info.Flags); err != nil {
+		err = fmt.Errorf("could not read gzip flag from footer, %v", err)
 	}
-	info.Gzip = gzipRaw != 0
 	return
 }
 

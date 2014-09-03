@@ -4,6 +4,9 @@ import (
 	"archive/tar"
 	"bytes"
 	"io"
+	"os"
+	"path"
+	"path/filepath"
 )
 
 type Tar struct {
@@ -42,7 +45,7 @@ func (t *Tar) Load() error {
 		if _, err = io.Copy(contents, tr); err != nil {
 			return err
 		}
-		f.Content = bytes.NewReader(contents.Bytes())
+		f.Content = NewByteReaderCloser(contents.Bytes())
 		t.tree[hdr.Name] = f
 	}
 	return nil
@@ -67,4 +70,38 @@ func (t *Tar) Files() ([]string, error) {
 		ctr += 1
 	}
 	return files, nil
+}
+
+func (t *Tar) Extract(dir string) error {
+	tr := tar.NewReader(t.reader)
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+		if err := os.MkdirAll(
+			filepath.Join(dir, filepath.Dir(hdr.Name)),
+			0700,
+		); err != nil {
+			return err
+		}
+		fi := hdr.FileInfo()
+		f, err := os.OpenFile(
+			path.Join(dir, hdr.Name),
+			os.O_CREATE|os.O_WRONLY,
+			fi.Mode(),
+		)
+		if err != nil {
+			return err
+		}
+		_, err = io.Copy(f, tr)
+		f.Close()
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }

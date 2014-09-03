@@ -18,19 +18,19 @@ const (
 
 func build(c *cli.Context) {
 	// Flags
-	src := c.String("src")
+	src := c.String(FlagSourceDir)
 	if src == "" {
 		src = "."
 	}
 	if !strings.ContainsRune("*./", rune(src[0])) {
 		log.Fatalf("If src is relative it must start with ./")
 	}
-	root := c.String("root")
+	root := c.String(FlagRootDir)
 	if root == "" {
 		root = "."
 	}
 	includes := []*regexp.Regexp{}
-	for _, i := range c.StringSlice("include") {
+	for _, i := range c.StringSlice(FlagInclude) {
 		log.Printf("Parsing include flag %s", i)
 		r, err := regexp.Compile(i)
 		if err != nil {
@@ -39,7 +39,7 @@ func build(c *cli.Context) {
 		includes = append(includes, r)
 	}
 	excludes := []*regexp.Regexp{}
-	for _, e := range c.StringSlice("exclude") {
+	for _, e := range c.StringSlice(FlagExclude) {
 		log.Printf("Parsing exclude flag %s", e)
 		r, err := regexp.Compile(e)
 		if err != nil {
@@ -47,7 +47,8 @@ func build(c *cli.Context) {
 		}
 		excludes = append(excludes, r)
 	}
-	gz := c.Bool("gzip")
+	gz := c.Bool(FlagGzip)
+	extract := c.Bool(FlagExtract)
 	// Build
 	goArgs := []string{"build", "-o", Output, src}
 	cmd := exec.Command("go", goArgs...)
@@ -96,11 +97,14 @@ func build(c *cli.Context) {
 		}
 		return nil
 	})
-	compression := gar.CompressionNone
+	var flags byte
 	if gz {
-		compression = gar.CompressionGzip
+		flags |= gar.FlagGzip
 	}
-	if err := w.Close(compression); err != nil {
+	if extract {
+		flags |= gar.FlagExtractFileSystem
+	}
+	if err := w.Close(flags); err != nil {
 		log.Fatalf("Error writing file, %v", err)
 	}
 }

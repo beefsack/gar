@@ -10,11 +10,6 @@ import (
 	"regexp"
 )
 
-const (
-	CompressionNone = iota
-	CompressionGzip
-)
-
 var FilesNoHiddenOrGo = regexp.MustCompile("")
 
 type Writer struct {
@@ -76,12 +71,13 @@ func (w *Writer) WriteFileWithFileInfo(name string, fi os.FileInfo, contents io.
 	return w.WriteFile(hdr, contents)
 }
 
-func (w *Writer) Close(compression int) error {
+func (w *Writer) Close(flags byte) error {
 	if err := w.t.Close(); err != nil {
 		return err
 	}
 	wr := w.w
-	if compression == CompressionGzip {
+	isGzip := flags&FlagGzip != 0
+	if isGzip {
 		wr = gzip.NewWriter(wr)
 	}
 	n, err := io.Copy(wr, bytes.NewReader(w.b.Bytes()))
@@ -89,8 +85,8 @@ func (w *Writer) Close(compression int) error {
 		return err
 	}
 	gi := GarInfo{
-		Gzip: compression == CompressionGzip,
-		Size: n,
+		Flags: flags,
+		Size:  n,
 	}
 	return gi.WriteTo(wr)
 }

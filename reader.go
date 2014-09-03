@@ -16,7 +16,7 @@ type Reader struct {
 func NewReader(r io.ReadSeeker) (*Reader, error) {
 	gr := &Reader{
 		r:   r,
-		buf: make([]byte, 2048+GarHeaderSize*2),
+		buf: make([]byte, 2048+GarFooterSize*2),
 	}
 	is, info, err := Stat(r)
 	if err != nil {
@@ -26,7 +26,7 @@ func NewReader(r io.ReadSeeker) (*Reader, error) {
 		return nil, fmt.Errorf("stream is not a valid gar archive")
 	}
 	gr.GarInfo = info
-	if _, err = r.Seek(-(int64(GarHeaderSize) + info.Size), 2); err != nil {
+	if _, err = r.Seek(-(int64(GarFooterSize) + info.Size), 2); err != nil {
 		return gr, fmt.Errorf("could not seek to start of tar, %v", err)
 	}
 	return gr, nil
@@ -38,8 +38,8 @@ func (r *Reader) Read(p []byte) (n int, err error) {
 		return 0, nil
 	}
 	toRead := r.n
-	if toRead > GarHeaderSize {
-		toRead -= GarHeaderSize // Always keep the header size in the buffer.
+	if toRead > GarFooterSize {
+		toRead -= GarFooterSize // Always keep the header size in the buffer.
 	}
 	if toRead > l {
 		toRead = l // We won't copy more than cap(p).
@@ -58,7 +58,7 @@ func (r *Reader) Read(p []byte) (n int, err error) {
 		} else if err != nil {
 			return toRead, err
 		}
-	} else if r.n <= GarHeaderSize {
+	} else if r.n <= GarFooterSize {
 		// We now have only the header left in the buffer, so this becomes EOF.
 		return toRead, io.EOF
 	}
